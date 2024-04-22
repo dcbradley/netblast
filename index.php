@@ -1,4 +1,5 @@
 <?php
+ini_set('display_errors', 'On');
 
 require_once "db.php";
 
@@ -7,6 +8,9 @@ function handleRequest() {
   switch( $r ) {
   case 'register':
     handleWorkerRegistration();
+    break;
+  case 'getwork':
+    handleGetWork();
     break;
   default:
     http_response_code(400);
@@ -24,10 +28,30 @@ function genCookie() {
   return substr($cookie,0,20);
 }
 
+function isIP4($addr) {
+  if( preg_match('^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$',$addr) ) {
+    return true;
+  }
+  return false;
+}
+
+function isIP6($addr) {
+  if( preg_match('^[0-9a-f:]+$',$addr) ) {
+    return true;
+  }
+  return false;
+}
+
 function handleWorkerRegistration() {
   $hostname = $_REQUEST['hostname'];
-  $ip4 = $_REQUEST['ip4'];
-  $ip6 = $_REQUEST['ip6'];
+  $ip4 = $_REQUEST['ip4'] ?? null;
+  $ip6 = $_REQUEST['ip6'] ?? null;
+  if( $ip4 === null && isIP4($_SERVER['REMOTE_ADDR']) ) {
+    $ip4 = $_SERVER['REMOTE_ADDR'];
+  }
+  if( $ip6 === null && isIP6($_SERVER['REMOTE_ADDR']) ) {
+    $ip6 = $_SERVER['REMOTE_ADDR'];
+  }
   $server_port = $_REQUEST['server_port'];
 
   $dbh = connectDB();
@@ -57,4 +81,76 @@ function handleWorkerRegistration() {
     'COOKIE' => $cookie,
   );
   echo json_encode($reply);
+}
+
+function handleGetWork() {
+  $worker_id = $_REQUEST['worker_id'];
+  $cookie = $_REQUEST['cookie'];
+  $requested_mode = $_REQUEST['mode'] ?? null;
+
+  $dbh = connectDB();
+  $sql = "SELECT * FROM worker WHERE WORKER_ID = :WORKER_ID AND COOKIE = :COOKIE";
+
+  $stmt = $dbh->prepare($sql);
+  $stmt->bindValue(":WORKER_ID",$worker_id);
+  $stmt->bindValue(":COOKIE",$cookie);
+  $stmt->execute();
+  $row = $stmt->fetch();
+
+  if( !$row ) {
+    $reply = array('SUCCESS' => false, 'ERROR_MSG' => 'Failed to find worker with specified ID.');
+    echo json_encode($reply);
+    return;
+  }
+
+  # Unless a mode was requested, be a client if there is an available
+  # server.  Otherwise, be a server.
+
+  if( !$requested_mode || $requested_mode == 'client' ) {
+    $sql = "
+      SELECT
+        worker.WORKER_ID,
+        worker.SERVER_PORT,
+        worker.IP4,
+        worker.IP6
+      FROM
+        worker
+      LEFT JOIN
+        connection
+      ON
+        connection.SERVER_ID = worker.WORKER_ID
+      WHERE
+        worker.CLOSED IS NULL
+        AND worker.SERVER_PORT IS NOT NULL
+        AND connection.SERVER_ID IS NULL
+        AND timestampdiff(SECOND,NOW(),worker.LAST_CONTACT) < 600
+      LIMIT 1
+    ";
+    $stmt = $dbh->prepare($sql);
+    $stmt->execute();
+    $row = $stmt->fetch();
+    if( $row ) {
+      $server_ip = $row['IP4'] ? $row['IP4'] : $row['IP6'];
+      $args = array('-p',$row['SERVER_PORT'],'-c',$server_ip);
+      $reply = array(
+        'SUCCESS' => true,
+        'CMD' => 'iperf',
+        'MODE' => 'client',
+        'ARGS' => $args,
+      );
+      echo json_encode($reply);
+      return;
+    }
+  }
+
+  if( !$requested_mode || $requested_mode == 'server' ) {
+    $args = array('-s');
+    $reply = array(
+      'SUCCESS' => true,
+      'CMD' => 'iperf',
+      'MODE' => 'server',
+      'ARGS' => $args,
+    );
+    echo json_encode($reply);
+  }
 }
