@@ -31,7 +31,7 @@ def sendRequest(manager,request,debug):
 def spawnBlastReceiver(worker_host,worker_port,debug):
     sock = socket.create_server((worker_host,worker_port))
     sock_addr = sock.getsockname()
-    blast_port = socket.getnameinfo(sock_addr,0)[1]
+    blast_port = socket.getnameinfo(sock_addr,socket.NI_NUMERICHOST | socket.NI_NUMERICSERV)[1]
     if debug:
         sys.stderr.write("Blast receiver listening on port " + str(blast_port) + "\n")
 
