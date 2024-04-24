@@ -99,6 +99,12 @@ class NetBlastServer(socketserver.TCPServer):
         self.keepalive(handler,req)
         req_ip = req['ip']
 
+        # unlink this client from any previous job it may have been doing
+        for worker_id,worker in self.workers.items():
+            if worker['blast_client'] == req['worker_id']:
+                worker['blast_client'] = None
+            break
+
         now = time.time()
         blast_server = None
         for worker_id,worker in self.workers.items():
