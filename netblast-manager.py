@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import socket
 import socketserver
 import json
@@ -29,11 +30,11 @@ class NetBlastHandler(socketserver.BaseRequestHandler):
                 req['ip'] = self.client_address[0]
 
             q = req['q']
-            if q == 'getwork':
+            if q == 'get_work':
                 res = self.server.getWork(self,req)
             elif q == 'register_worker':
                 res = self.server.registerWorker(self,req)
-            elif q == 'keepalive':
+            elif q == 'keep_alive':
                 res = self.server.keepalive(self,req)
             elif q == 'report_flow':
                 res = self.server.reportFlow(self,req)
@@ -95,9 +96,8 @@ class NetBlastServer(socketserver.TCPServer):
         self.workers[req['worker_id']]['last_contact'] = time.time()
 
     def getWork(self,handler,req):
+        self.keepalive(handler,req)
         req_ip = req['ip']
-        if not ('worker_id' in req):
-            req['worker_id'] = self.getNewWorkerID()
 
         now = time.time()
         blast_server = None
@@ -133,6 +133,7 @@ class NetBlastServer(socketserver.TCPServer):
         return res
 
     def reportFlow(self,handler,req):
+        self.keepalive(handler,req)
         print('FLOW:',req['ip'],req['blast_ip'],req['blast_port'],req['start'],req['duration'],req['bytes'])
 
 def whatsMyIP():
