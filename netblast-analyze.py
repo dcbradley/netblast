@@ -16,7 +16,7 @@ def netflowMatches(src_ip,dest_ip,src_patterns,dest_patterns):
         return False
     return True
 
-def analyzeNetBlastLog(logfile,outputcsv,src,dest,debug):
+def analyzeNetBlastLog(logfile,outputcsv,src,dest,dt,debug):
     F = open(logfile,"r")
     records = []
     for line in F:
@@ -55,20 +55,42 @@ def analyzeNetBlastLog(logfile,outputcsv,src,dest,debug):
     OF = open(outputcsv,"w")
     csvout = csv.writer(OF)
 
-    csvout.writerow(["t","bps","bytes","duration"])
+    csvout.writerow(["t","duration","bps","bytes","tx_IPs","txrx_IPs",])
 
-    dt = 30
     for t in range(int(min_time),int(max_time),dt):
         bytes_sent = 0
+        src_ips = {}
+        dest_ips = {}
         for rec in records:
-            if rec['start_time'] <= t and rec['end_time'] > t:
-                delta = dt
-                if t + delta > rec['end_time']:
-                    delta = rec['end_time'] - t
-                bytes_sent += rec['bytes_sent']/(1.0*rec['elapsed'])*dt
+            if rec['start_time'] < t+dt and rec['end_time'] > t:
+                delta = min(rec['end_time'],t+dt) - max(rec['start_time'],t)
+                bytes_sent += rec['bytes_sent']/(1.0*rec['elapsed'])*delta
+
+                if not rec['src_ip'] in src_ips:
+                    src_ips[rec['src_ip']] = 0
+                src_ips[rec['src_ip']] += delta
+
+                if not rec['dest_ip'] in dest_ips:
+                    dest_ips[rec['dest_ip']] = 0
+                dest_ips[rec['dest_ip']] += delta
+
         flow = bytes_sent/dt*8
 
-        csvout.writerow([round(t-min_time),round(flow),round(bytes_sent),dt])
+        num_src_ips = 0
+        num_src_and_dest_ips = 0
+        for src_ip in src_ips:
+            if src_ips[src_ip] > dt:
+                # if there are multiple workers on the same computer, only count them as 1
+                src_ips[src_ip] = dt
+            num_src_ips += src_ips[src_ip]*1.0/dt
+
+            if src_ip in dest_ips:
+                d = src_ips[src_ip]
+                if dest_ips[src_ip] < d:
+                    d = dest_ips[src_ip]
+                num_src_and_dest_ips += d*1.0/dt
+
+        csvout.writerow([round(t-min_time),dt,round(flow),round(bytes_sent),round(num_src_ips),round(num_src_and_dest_ips)])
 
 if __name__ == "__main__":
     import argparse
@@ -77,8 +99,9 @@ if __name__ == "__main__":
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--src',action='append',help='filter by IP address of source')
     parser.add_argument('--dest',action='append',help='filter by IP address of destination')
+    parser.add_argument('--dt',default=30,type=int,help='time delta between output records')
     parser.add_argument('logfile')
     parser.add_argument('outputcsv')
 
     args = parser.parse_args()
-    analyzeNetBlastLog(args.logfile,args.outputcsv,args.src,args.dest,args.debug)
+    analyzeNetBlastLog(args.logfile,args.outputcsv,args.src,args.dest,args.dt,args.debug)
