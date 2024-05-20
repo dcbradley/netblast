@@ -3,15 +3,16 @@ import csv
 import ipaddress
 
 def ipMatches(ip,patterns):
+    if patterns is None or len(patterns)==0: return True
     for pattern in patterns:
         if pattern == ip: return True
         if ipaddress.ip_address(ip) in ipaddress.ip_network(pattern): return True
     return False
 
 def netflowMatches(src_ip,dest_ip,src_patterns,dest_patterns):
-    if not (src_patterns is None) and len(src_patterns)>0 and not ipMatches(src_ip,src_patterns):
+    if not ipMatches(src_ip,src_patterns):
         return False
-    if not (dest_patterns is None) and len(dest_patterns)>0 and not ipMatches(dest_ip,dest_patterns):
+    if not ipMatches(dest_ip,dest_patterns):
         return False
     return True
 
