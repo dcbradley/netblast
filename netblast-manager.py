@@ -6,6 +6,8 @@ import traceback
 import random
 import time
 import ipaddress
+import sys
+import threading
 
 KEEPALIVE_TIMEOUT = 120
 RETRY_INTERVAL = 10
@@ -44,6 +46,7 @@ class NetBlastHandler(socketserver.BaseRequestHandler):
 
             if self.server.debug:
                 print("Response to {}: {}".format(self.client_address[0],res))
+                sys.stdout.flush()
 
             self.request.sendall(bytes(json.dumps(res),"utf-8"))
 
@@ -166,6 +169,7 @@ class NetBlastServer(socketserver.TCPServer):
     def reportFlow(self,handler,req):
         self.keepalive(handler,req)
         print('FLOW:',req['ip'],req['blast_ip'],req['blast_port'],req['start'],req['duration'],req['bytes'])
+        sys.stdout.flush()
 
 def whatsMyIP():
     try:
@@ -175,6 +179,15 @@ def whatsMyIP():
         return s.getsockname()[0]
     except:
         pass
+
+def considerShutdown(server):
+    while server.test_duration == 0 or time.time() - server.test_started < server.test_duration + 5:
+        s = server.test_duration - (time.time() - server.test_started)
+        if s < 1: s = 5
+        time.sleep(s)
+    print("Test ended after " + str(round(time.time() - server.test_started)) + " seconds.")
+    sys.stdout.flush()
+    server.shutdown()
 
 def runNetBlastManager(host,port,debug,test_duration,src_networks,dest_networks):
     server = NetBlastServer((host, port), NetBlastHandler)
@@ -189,6 +202,10 @@ def runNetBlastManager(host,port,debug,test_duration,src_networks,dest_networks)
         my_ip = whatsMyIP()
         if my_ip: host = my_ip
     print("Manager network address:",host + ":" + port)
+    sys.stdout.flush()
+
+    ender = threading.Thread(target=considerShutdown, args=(server,))
+    ender.start()
 
     server.serve_forever()
 
