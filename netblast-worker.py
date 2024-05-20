@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import traceback
 import signal
 import socket
 import time
@@ -44,7 +45,7 @@ def spawnBlastReceiver(worker_host,worker_port,debug):
     while True:
         (client,client_addr) = sock.accept()
         if debug:
-            sys.stderr.write("Blas receiver got connection from " + repr(client_addr) + "\n")
+            sys.stderr.write("Blast receiver got connection from " + repr(client_addr) + "\n")
 
         buf = bytearray(BLAST_BUFSIZE)
         byte_count = 0
@@ -114,7 +115,11 @@ def runNetBlastWorker(manager,worker_host,worker_port,debug,worker_duration):
                 continue
             break
 
-        blastem(manager,worker_id,res['blast_ip'],res['blast_port'],res['duration'],debug)
+        try:
+            blastem(manager,worker_id,res['blast_ip'],res['blast_port'],res['duration'],debug)
+        except Exception as error:
+            print("Error blasting " + res['blast_ip'] + ":" + res['blast_port'] + ":",error)
+            print(traceback.format_exc())
 
     os.kill(blast_pid,signal.SIGTERM)
     print("Shutting worker down after",time.time()-worker_started,"seconds")
