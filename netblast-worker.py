@@ -119,6 +119,14 @@ def runNetBlastWorker(manager,worker_host,worker_port,debug,worker_duration):
     os.kill(blast_pid,signal.SIGTERM)
     print("Shutting worker down after",time.time()-worker_started,"seconds")
 
+def daemonize():
+    if os.fork():
+        sys.exit(0)
+    os.setsid()
+    if os.fork():
+        sys.exit(0)
+    os.chdir("/")
+
 if __name__ == "__main__":
     import argparse
 
@@ -128,6 +136,11 @@ if __name__ == "__main__":
     parser.add_argument('--worker-host', default="", help='IP/hostname to bind to (default all interfaces)')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--duration', type=int, help='Stop the worker after this many seconds.')
+    parser.add_argument('--daemonize',action='store_true')
 
     args = parser.parse_args()
+
+    if args.daemonize:
+        daemonize()
+
     runNetBlastWorker(args.manager,args.worker_host,args.worker_port,args.debug,args.duration)
