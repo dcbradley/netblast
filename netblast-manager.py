@@ -8,11 +8,13 @@ import time
 import ipaddress
 import sys
 import threading
+import signal
 
 KEEPALIVE_TIMEOUT = 120
 RETRY_INTERVAL = 10
 BLAST_CLIENT_DURATION = 60
 TEST_DURATION = 120
+MAX_CONNECT_ERRORS = 3
 
 class NetBlastHandler(socketserver.BaseRequestHandler):
 
@@ -40,6 +42,8 @@ class NetBlastHandler(socketserver.BaseRequestHandler):
                 res = self.server.keepalive(self,req)
             elif q == 'report_flow':
                 res = self.server.reportFlow(self,req)
+            elif q == 'connect_failed':
+                res = self.server.reportConnectFailed(self,req)
             else:
                 print("Unknown command from {}: {}".format(self.client_address[0],data))
                 res = {'success': False, 'message': "Unknown command '" + q + "'"}
@@ -64,6 +68,7 @@ class NetBlastServer(socketserver.TCPServer):
     test_started = None
     src_networks = None
     dest_networks = None
+    shutting_down = False
 
     def __init__(self,addr,handler):
         super().__init__(addr,handler)
@@ -90,6 +95,7 @@ class NetBlastServer(socketserver.TCPServer):
             worker['blast_port'] = req['blast_port']
         else:
             worker['blast_port'] = 0
+        worker['connect_errors'] = 0
         worker['blast_client'] = None
         worker['last_contact'] = time.time()
 
@@ -127,7 +133,7 @@ class NetBlastServer(socketserver.TCPServer):
                 res['retry_after'] = now - self.test_started
                 if res['retry_after'] > KEEPALIVE_TIMEOUT/2:
                     res['retry_after'] = KEEPALIVE_TIMEOUT/2
-                res['error_msg'] = 'You will only receive data.  Check in again in ' + str(round(res['retry_after'],1)) + ' seconds.'
+                res['error_msg'] = 'You will only be a server.  Check in again in ' + str(round(res['retry_after'],1)) + ' seconds.'
             else:
                 res['error_msg'] = 'Test ended.'
             return res
@@ -139,7 +145,10 @@ class NetBlastServer(socketserver.TCPServer):
             if dest_worker['blast_client'] and now - self.workers[dest_worker['blast_client']]['last_contact'] < KEEPALIVE_TIMEOUT: continue
             if dest_worker_ip == req_ip: continue
             if not dest_worker['blast_port']: continue
+            # avoid simultaneously acting as both a server and client to the same peer
+            if src_worker['blast_client'] and src_worker['blast_client'] == dest_worker['worker_id']: continue
             if now - dest_worker['last_contact'] > KEEPALIVE_TIMEOUT: continue
+            if dest_worker['connect_errors'] > MAX_CONNECT_ERRORS: continue
             blast_server = dest_worker
             break
 
@@ -157,10 +166,12 @@ class NetBlastServer(socketserver.TCPServer):
             res['success'] = True
             res['blast_ip'] = blast_server['ip']
             res['blast_port'] = blast_server['blast_port']
+            res['blast_id'] = blast_server['worker_id']
+            res['direction'] = self.direction
             res['duration'] = BLAST_CLIENT_DURATION
             if now - self.test_started + BLAST_CLIENT_DURATION > self.test_duration:
                 res['duration'] = self.test_duration - (now - self.test_started)
-                if res['duration'] <= 0:
+                if res['duration'] < 1:
                     res['success'] = False
                     res['error_msg'] = 'Test ended.'
 
@@ -168,8 +179,24 @@ class NetBlastServer(socketserver.TCPServer):
 
     def reportFlow(self,handler,req):
         self.keepalive(handler,req)
-        print('FLOW:',req['ip'],req['blast_ip'],req['blast_port'],req['start'],req['duration'],req['bytes'])
+
+        if req['bytes_sent']:
+            print('FLOW:',req['ip'],req['blast_ip'],req['blast_port'],req['start'],req['duration'],req['bytes_sent'])
+        if req['bytes_received']:
+            print('FLOW:',req['blast_ip'],req['ip'],req['blast_port'],req['start'],req['duration'],req['bytes_received'])
+
         sys.stdout.flush()
+
+    def reportConnectFailed(self,handler,req):
+        server = self.workers[req['blast_id']]
+        server['connect_errors'] += 1
+        if server['connect_errors'] == MAX_CONNECT_ERRORS+1:
+            print("Will no longer use failing server at ",server['ip'] + ":" + str(server['blast_port']),": ",req['error'])
+
+    def stopSignal(self,signum,frame):
+        self.shutting_down = True
+        sys.stderr.write("Received interrupt.  Shutting down.\n")
+
 
 def whatsMyIP():
     try:
@@ -181,20 +208,22 @@ def whatsMyIP():
         pass
 
 def considerShutdown(server):
-    while server.test_duration == 0 or time.time() - server.test_started < server.test_duration + 5:
+    while not server.shutting_down and (server.test_duration == 0 or time.time() - server.test_started < server.test_duration + 5):
         s = server.test_duration - (time.time() - server.test_started)
         if s < 1: s = 5
+        if s > 5: s = 5
         time.sleep(s)
     print("Test ended after " + str(round(time.time() - server.test_started)) + " seconds.")
     sys.stdout.flush()
     server.shutdown()
 
-def runNetBlastManager(host,port,debug,test_duration,src_networks,dest_networks):
+def runNetBlastManager(host,port,debug,test_duration,src_networks,dest_networks,direction):
     server = NetBlastServer((host, port), NetBlastHandler)
     server.debug = debug
     server.test_duration = test_duration
     server.src_networks = src_networks
     server.dest_networks = dest_networks
+    server.direction = direction
 
     if not host: host = str(server.server_address[0])
     port = str(server.server_address[1])
@@ -207,7 +236,11 @@ def runNetBlastManager(host,port,debug,test_duration,src_networks,dest_networks)
     ender = threading.Thread(target=considerShutdown, args=(server,))
     ender.start()
 
+    signal.signal(signal.SIGINT, server.stopSignal)
+    signal.signal(signal.SIGTERM, server.stopSignal)
+
     server.serve_forever()
+    ender.join()
 
 def ipMatches(ip,patterns):
     if patterns is None or len(patterns)==0: return True
@@ -226,6 +259,7 @@ if __name__ == "__main__":
     parser.add_argument('--duration', default=TEST_DURATION, type=int, help='Stop the test after this many seconds.')
     parser.add_argument('--src',action='append',help='Network(s) that should send data.')
     parser.add_argument('--dest',action='append',help='Network(s) that should receive data.')
+    parser.add_argument('--direction',default='s',choices=['s','r','b'],help="Direction of flow from 'src' to 'dest': (s)end, (r)eceive, (b)oth.")
 
     args = parser.parse_args()
-    runNetBlastManager(args.host,args.port,args.debug,args.duration,args.src,args.dest)
+    runNetBlastManager(args.host,args.port,args.debug,args.duration,args.src,args.dest,args.direction)
