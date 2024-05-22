@@ -2,12 +2,8 @@
 import csv
 import ipaddress
 
-def ipMatches(ip,patterns,other_patterns):
+def ipMatches(ip,patterns):
     if patterns is None or len(patterns)==0:
-        if other_patterns is None or len(other_patterns)==0: return True
-        for other_pattern in other_patterns:
-            if other_pattern == ip: return False
-            if ipaddress.ip_address(ip) in ipaddress.ip_network(other_pattern): return False
         return True
 
     for pattern in patterns:
@@ -16,9 +12,9 @@ def ipMatches(ip,patterns,other_patterns):
     return False
 
 def netflowMatches(src_ip,dest_ip,src_patterns,dest_patterns):
-    if not ipMatches(src_ip,src_patterns,dest_patterns):
+    if not ipMatches(src_ip,src_patterns):
         return False
-    if not ipMatches(dest_ip,dest_patterns,src_patterns):
+    if not ipMatches(dest_ip,dest_patterns):
         return False
     return True
 
@@ -101,10 +97,10 @@ def analyzeNetBlastLog(logfile,outputcsv,src,dest,dt,debug):
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description='Analyze the log of a netblast manager to summarize network flows.')
+    parser = argparse.ArgumentParser(description='Analyze the log of a NetBlast manager to summarize network flows.')
     parser.add_argument('--debug', action='store_true')
-    parser.add_argument('--src',action='append',help='filter by IP address of source')
-    parser.add_argument('--dest',action='append',help='filter by IP address of destination')
+    parser.add_argument('--src',action='append',help='Filter by IP address of source. (May use option multiple times.)')
+    parser.add_argument('--dest',action='append',help='Filter by IP address of destination. (May use option multiple times.)')
     parser.add_argument('--dt',default=30,type=int,help='time delta between output records')
     parser.add_argument('logfile')
     parser.add_argument('outputcsv')
