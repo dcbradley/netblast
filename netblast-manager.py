@@ -34,7 +34,13 @@ class NetBlastHandler(socketserver.BaseRequestHandler):
                 req['ip'] = self.client_address[0]
 
             q = req['q']
-            if q == 'get_work':
+            if 'worker_id' in req and req['worker_id'] not in self.server.workers:
+                res = {}
+                res['success'] = False
+                res['reregister'] = True
+                res['retry_after'] = 1
+                res['error_msg'] = "Worker ID " + str(req['worker_id']) + " not found.  Reregister."
+            elif q == 'get_work':
                 res = self.server.getWork(self,req)
             elif q == 'register_worker':
                 res = self.server.registerWorker(self,req)

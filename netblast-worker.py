@@ -205,15 +205,19 @@ def blastClientProtocol(manager,worker_id,blast_ip,blast_port,blast_id,duration,
         print("NetBlast client received",stats['bytes_received'],"bytes from",peer_addr,"in",round(elapsed),"seconds")
     sys.stdout.flush()
 
-def runNetBlastWorker(manager,worker_host,worker_port,debug,worker_duration):
-    worker_started = time.time()
-    (blast_port,blast_pid) = spawnBlastServer(worker_host,worker_port,debug)
-
+def registerWorker(manager,blast_port,debug):
     req = {}
     req['q'] = 'register_worker'
     req['blast_port'] = blast_port
     res = sendRequest(manager,req,debug)
     worker_id = res['worker_id']
+    return worker_id
+
+def runNetBlastWorker(manager,worker_host,worker_port,debug,worker_duration):
+    worker_started = time.time()
+    (blast_port,blast_pid) = spawnBlastServer(worker_host,worker_port,debug)
+
+    worker_id = registerWorker(manager,blast_port,debug)
 
     while not worker_duration or time.time() - worker_started < worker_duration:
         req = {}
@@ -223,6 +227,8 @@ def runNetBlastWorker(manager,worker_host,worker_port,debug,worker_duration):
         if not res['success']:
             if res['error_msg']:
                 sys.stderr.write("Received message from manager: " + res['error_msg'] + "\n")
+            if 'reregister' in res and res['reregister']:
+                worker_id = registerWorker(manager,blast_port,debug)
             if 'retry_after' in res:
                 time.sleep(res['retry_after'])
                 continue
