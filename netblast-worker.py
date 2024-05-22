@@ -41,12 +41,12 @@ def spawnBlastServer(worker_host,worker_port,debug):
     sock_addr = sock.getsockname()
     blast_port = socket.getnameinfo(sock_addr,socket.NI_NUMERICHOST | socket.NI_NUMERICSERV)[1]
     if debug:
-        sys.stderr.write("Blast server listening on port " + str(blast_port) + "\n")
+        sys.stderr.write("NetBlast server listening on port " + str(blast_port) + "\n")
 
     blast_pid = os.fork()
     if blast_pid > 0:
         if debug:
-            sys.stderr.write("Blast server spawned with pid " + str(blast_pid) + "\n")
+            sys.stderr.write("NetBlast server spawned with pid " + str(blast_pid) + "\n")
         return (blast_port,blast_pid)
 
     signal.signal(signal.SIGTERM, stopBlastServer)
@@ -59,7 +59,7 @@ def spawnBlastServer(worker_host,worker_port,debug):
         if not client: continue
         (client_sock,client_addr) = client
         if debug:
-            sys.stderr.write("Blast server received connection from " + repr(client_addr) + "\n")
+            sys.stderr.write("NetBlast server received connection from " + repr(client_addr) + "\n")
 
         blastServerProtocol(client_sock,client_addr)
     sys.exit(0)
@@ -95,7 +95,7 @@ def blastServerProtocol(sock,sock_addr):
     duration = int(buf.decode())
 
     peer_addr = str(sock_addr[0]) + ":" + str(sock_addr[1])
-    print("Blast server will",directionDesc(direction),peer_addr,"for",round(duration),"seconds.")
+    print("NetBlast server will",directionDesc(direction),peer_addr,"for",round(duration),"seconds.")
     sys.stdout.flush()
 
     stats = {}
@@ -120,9 +120,9 @@ def blastServerProtocol(sock,sock_addr):
     end_time = time.time()
     elapsed = end_time - start_time
     if stats['bytes_sent']:
-        print("Blast server sent",stats['bytes_sent'],"bytes to",peer_addr,"in",round(elapsed),"seconds")
+        print("NetBlast server sent",stats['bytes_sent'],"bytes to",peer_addr,"in",round(elapsed),"seconds")
     if stats['bytes_received']:
-        print("Blast server received",stats['bytes_received'],"bytes from",peer_addr,"in",round(elapsed),"seconds")
+        print("NetBlast server received",stats['bytes_received'],"bytes from",peer_addr,"in",round(elapsed),"seconds")
     sys.stdout.flush()
 
 def directionDesc(d):
@@ -134,7 +134,7 @@ def directionDesc(d):
 def blastClientProtocol(manager,worker_id,blast_ip,blast_port,blast_id,duration,direction,debug):
     peer_addr = blast_ip + ":" + str(blast_port)
     if debug:
-        sys.stderr.write("Blast client connecting to " + peer_addr + "\n")
+        sys.stderr.write("NetBlast client connecting to " + peer_addr + "\n")
 
     try:
         sock = socket.create_connection((blast_ip,blast_port))
@@ -149,7 +149,7 @@ def blastClientProtocol(manager,worker_id,blast_ip,blast_port,blast_id,duration,
         sendRequest(manager,req,debug)
         return
 
-    print("Blast client will",directionDesc(direction),peer_addr,"for",round(duration),"seconds.")
+    print("NetBlast client will",directionDesc(direction),peer_addr,"for",round(duration),"seconds.")
     sys.stdout.flush()
 
     other_direction = ""
@@ -200,9 +200,9 @@ def blastClientProtocol(manager,worker_id,blast_ip,blast_port,blast_id,duration,
     sendRequest(manager,req,debug)
 
     if stats['bytes_sent']:
-        print("Blast client sent",stats['bytes_sent'],"bytes to",peer_addr,"in",round(elapsed),"seconds")
+        print("NetBlast client sent",stats['bytes_sent'],"bytes to",peer_addr,"in",round(elapsed),"seconds")
     if stats['bytes_received']:
-        print("Blast client received",stats['bytes_received'],"bytes from",peer_addr,"in",round(elapsed),"seconds")
+        print("NetBlast client received",stats['bytes_received'],"bytes from",peer_addr,"in",round(elapsed),"seconds")
     sys.stdout.flush()
 
 def runNetBlastWorker(manager,worker_host,worker_port,debug,worker_duration):
