@@ -66,6 +66,7 @@ class NetBlastHandler(socketserver.BaseRequestHandler):
             print(traceback.format_exc())
 
 class NetBlastServer(socketserver.TCPServer):
+    request_queue_size = 100 # override default of 5 to withstand request storms
     allow_reuse_address = True
     workers = None
     ids = None
@@ -75,6 +76,9 @@ class NetBlastServer(socketserver.TCPServer):
     client_networks = None
     server_networks = None
     shutting_down = False
+    ramp_delay = None
+    ramp_level = 0
+    last_ramp_level_increment = None
 
     def __init__(self,addr,handler):
         super().__init__(addr,handler)
@@ -130,10 +134,13 @@ class NetBlastServer(socketserver.TCPServer):
         res = {}
         now = time.time()
 
+        ramp_level_delta = 1
+
         # unlink this client from any previous job it may have been doing
         for worker_id,server_worker in self.workers.items():
             if server_worker['blast_client'] == req['worker_id']:
                 server_worker['blast_client'] = None
+                ramp_level_delta -= 1
 
         if not client_worker['in_client_networks']:
             res['success'] = False
@@ -149,6 +156,13 @@ class NetBlastServer(socketserver.TCPServer):
             else:
                 res['error_msg'] = 'Test ended.'
             return res
+
+        if self.ramp_delay and ramp_level_delta > 0:
+            if self.last_ramp_level_increment and now - self.last_ramp_level_increment < self.ramp_delay:
+                res['success'] = False
+                res['retry_after'] = self.ramp_delay - (now - self.last_ramp_level_increment)
+                res['error_msg'] = 'Ramping up. Wait ' + str(round(res['retry_after'])) + ' seconds.'
+                return res
 
         blast_server = None
         for server_worker_id,server_worker in self.workers.items():
@@ -174,6 +188,10 @@ class NetBlastServer(socketserver.TCPServer):
             else:
                 res['error_msg'] = 'Test ended.'
         else:
+            self.ramp_level += ramp_level_delta
+            if ramp_level_delta > 0:
+                self.last_ramp_level_increment = now
+
             blast_server['blast_client'] = req['worker_id']
             res['success'] = True
             res['blast_ip'] = blast_server['ip']
@@ -229,13 +247,14 @@ def considerShutdown(server):
     sys.stdout.flush()
     server.shutdown()
 
-def runNetBlastManager(host,port,debug,test_duration,client_networks,server_networks,direction):
+def runNetBlastManager(host,port,debug,test_duration,client_networks,server_networks,direction,ramp_delay):
     server = NetBlastServer((host, port), NetBlastHandler)
     server.debug = debug
     server.test_duration = test_duration
     server.client_networks = client_networks
     server.server_networks = server_networks
     server.direction = direction
+    server.ramp_delay = ramp_delay
 
     if not host: host = str(server.server_address[0])
     port = str(server.server_address[1])
@@ -278,6 +297,7 @@ if __name__ == "__main__":
     parser.add_argument('--clients',action='append',help='Network(s) that should send data. (May use option multiple times.)')
     parser.add_argument('--servers',action='append',help='Network(s) that should receive data. (May use option multiple times.)')
     parser.add_argument('--direction',default='s',choices=['s','r','b'],help="Direction of flow from client to server: (s)end, (r)eceive, (b)oth.")
+    parser.add_argument('--ramp-delay',type=float,help='Number of seconds to wait before adding another transfer.')
 
     args = parser.parse_args()
-    runNetBlastManager(args.host,args.port,args.debug,args.duration,args.clients,args.servers,args.direction)
+    runNetBlastManager(args.host,args.port,args.debug,args.duration,args.clients,args.servers,args.direction,args.ramp_delay)
