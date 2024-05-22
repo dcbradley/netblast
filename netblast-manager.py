@@ -99,8 +99,10 @@ class NetBlastServer(socketserver.TCPServer):
         worker['blast_client'] = None
         worker['last_contact'] = time.time()
 
-        worker['in_src_networks'] = ipMatches(worker['ip'],self.src_networks)
-        worker['in_dest_networks'] = ipMatches(worker['ip'],self.dest_networks)
+        worker['in_src_networks'] = ipMatches(worker['ip'],self.src_networks,self.dest_networks)
+        worker['in_dest_networks'] = ipMatches(worker['ip'],self.dest_networks,self.src_networks)
+        if not worker['in_src_networks'] and not worker['in_dest_networks']:
+            print("Warning: worker with IP",worker['ip'],"is not in src or dest networks, so it will not participate.")
 
         self.workers[worker_id] = worker
 
@@ -133,7 +135,11 @@ class NetBlastServer(socketserver.TCPServer):
                 res['retry_after'] = now - self.test_started
                 if res['retry_after'] > KEEPALIVE_TIMEOUT/2:
                     res['retry_after'] = KEEPALIVE_TIMEOUT/2
-                res['error_msg'] = 'You will only be a server.  Check in again in ' + str(round(res['retry_after'],1)) + ' seconds.'
+                if src_worker['in_dest_networks']:
+                    res['error_msg'] = 'You will only be a server.'
+                else:
+                    res['error_msg'] = 'You are not in src or dest networks, so you will do nothing.'
+                res['error_msg'] += '  Check in again in ' + str(round(res['retry_after'],1)) + ' seconds.'
             else:
                 res['error_msg'] = 'Test ended.'
             return res
@@ -242,8 +248,14 @@ def runNetBlastManager(host,port,debug,test_duration,src_networks,dest_networks,
     server.serve_forever()
     ender.join()
 
-def ipMatches(ip,patterns):
-    if patterns is None or len(patterns)==0: return True
+def ipMatches(ip,patterns,other_patterns):
+    if patterns is None or len(patterns)==0:
+        if other_patterns is None or len(other_patterns)==0: return True
+        for other_pattern in other_patterns:
+            if other_pattern == ip: return False
+            if ipaddress.ip_address(ip) in ipaddress.ip_network(other_pattern): return False
+        return True
+
     for pattern in patterns:
         if pattern == ip: return True
         if ipaddress.ip_address(ip) in ipaddress.ip_network(pattern): return True
