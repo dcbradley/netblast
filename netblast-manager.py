@@ -66,8 +66,8 @@ class NetBlastServer(socketserver.TCPServer):
     debug = None
     test_duration = None
     test_started = None
-    src_networks = None
-    dest_networks = None
+    client_networks = None
+    server_networks = None
     shutting_down = False
 
     def __init__(self,addr,handler):
@@ -99,10 +99,10 @@ class NetBlastServer(socketserver.TCPServer):
         worker['blast_client'] = None
         worker['last_contact'] = time.time()
 
-        worker['in_src_networks'] = ipMatches(worker['ip'],self.src_networks,self.dest_networks)
-        worker['in_dest_networks'] = ipMatches(worker['ip'],self.dest_networks,self.src_networks)
-        if not worker['in_src_networks'] and not worker['in_dest_networks']:
-            print("Warning: worker with IP",worker['ip'],"is not in src or dest networks, so it will not participate.")
+        worker['in_client_networks'] = ipMatches(worker['ip'],self.client_networks,self.server_networks)
+        worker['in_server_networks'] = ipMatches(worker['ip'],self.server_networks,self.client_networks)
+        if not worker['in_client_networks'] and not worker['in_server_networks']:
+            print("Warning: worker with IP",worker['ip'],"is not in client or server networks, so it will not participate.")
 
         self.workers[worker_id] = worker
 
@@ -119,43 +119,43 @@ class NetBlastServer(socketserver.TCPServer):
 
     def getWork(self,handler,req):
         self.keepalive(handler,req)
-        src_worker = self.workers[req['worker_id']]
+        client_worker = self.workers[req['worker_id']]
         req_ip = req['ip']
         res = {}
         now = time.time()
 
         # unlink this client from any previous job it may have been doing
-        for worker_id,dest_worker in self.workers.items():
-            if dest_worker['blast_client'] == req['worker_id']:
-                dest_worker['blast_client'] = None
+        for worker_id,server_worker in self.workers.items():
+            if server_worker['blast_client'] == req['worker_id']:
+                server_worker['blast_client'] = None
 
-        if not src_worker['in_src_networks']:
+        if not client_worker['in_client_networks']:
             res['success'] = False
             if now - self.test_started < self.test_duration:
                 res['retry_after'] = now - self.test_started
                 if res['retry_after'] > KEEPALIVE_TIMEOUT/2:
                     res['retry_after'] = KEEPALIVE_TIMEOUT/2
-                if src_worker['in_dest_networks']:
+                if client_worker['in_server_networks']:
                     res['error_msg'] = 'You will only be a server.'
                 else:
-                    res['error_msg'] = 'You are not in src or dest networks, so you will do nothing.'
+                    res['error_msg'] = 'You are not in client or server networks, so you will do nothing.'
                 res['error_msg'] += '  Check in again in ' + str(round(res['retry_after'],1)) + ' seconds.'
             else:
                 res['error_msg'] = 'Test ended.'
             return res
 
         blast_server = None
-        for dest_worker_id,dest_worker in self.workers.items():
-            dest_worker_ip = dest_worker['ip']
-            if not dest_worker['in_dest_networks']: continue
-            if dest_worker['blast_client'] and now - self.workers[dest_worker['blast_client']]['last_contact'] < KEEPALIVE_TIMEOUT: continue
-            if dest_worker_ip == req_ip: continue
-            if not dest_worker['blast_port']: continue
+        for server_worker_id,server_worker in self.workers.items():
+            server_worker_ip = server_worker['ip']
+            if not server_worker['in_server_networks']: continue
+            if server_worker['blast_client'] and now - self.workers[server_worker['blast_client']]['last_contact'] < KEEPALIVE_TIMEOUT: continue
+            if server_worker_ip == req_ip: continue
+            if not server_worker['blast_port']: continue
             # avoid simultaneously acting as both a server and client to the same peer
-            if src_worker['blast_client'] and src_worker['blast_client'] == dest_worker['worker_id']: continue
-            if now - dest_worker['last_contact'] > KEEPALIVE_TIMEOUT: continue
-            if dest_worker['connect_errors'] > MAX_CONNECT_ERRORS: continue
-            blast_server = dest_worker
+            if client_worker['blast_client'] and client_worker['blast_client'] == server_worker['worker_id']: continue
+            if now - server_worker['last_contact'] > KEEPALIVE_TIMEOUT: continue
+            if server_worker['connect_errors'] > MAX_CONNECT_ERRORS: continue
+            blast_server = server_worker
             break
 
         if not blast_server:
@@ -223,12 +223,12 @@ def considerShutdown(server):
     sys.stdout.flush()
     server.shutdown()
 
-def runNetBlastManager(host,port,debug,test_duration,src_networks,dest_networks,direction):
+def runNetBlastManager(host,port,debug,test_duration,client_networks,server_networks,direction):
     server = NetBlastServer((host, port), NetBlastHandler)
     server.debug = debug
     server.test_duration = test_duration
-    server.src_networks = src_networks
-    server.dest_networks = dest_networks
+    server.client_networks = client_networks
+    server.server_networks = server_networks
     server.direction = direction
 
     if not host: host = str(server.server_address[0])
@@ -269,9 +269,9 @@ if __name__ == "__main__":
     parser.add_argument('--host', default="", help='IP/hostname to bind to (default all interfaces)')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--duration', default=TEST_DURATION, type=int, help='Stop the test after this many seconds.')
-    parser.add_argument('--src',action='append',help='Network(s) that should send data.')
-    parser.add_argument('--dest',action='append',help='Network(s) that should receive data.')
-    parser.add_argument('--direction',default='s',choices=['s','r','b'],help="Direction of flow from 'src' to 'dest': (s)end, (r)eceive, (b)oth.")
+    parser.add_argument('--clients',action='append',help='Network(s) that should send data. (May use option multiple times.)')
+    parser.add_argument('--servers',action='append',help='Network(s) that should receive data. (May use option multiple times.)')
+    parser.add_argument('--direction',default='s',choices=['s','r','b'],help="Direction of flow from client to server: (s)end, (r)eceive, (b)oth.")
 
     args = parser.parse_args()
-    runNetBlastManager(args.host,args.port,args.debug,args.duration,args.src,args.dest,args.direction)
+    runNetBlastManager(args.host,args.port,args.debug,args.duration,args.clients,args.servers,args.direction)
