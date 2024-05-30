@@ -38,7 +38,8 @@ which direction data flows between which computers, and whether to
 slowly ramp up the number of active flows.
 
 The worker's command-line options control the network port used by the
-worker and whether to run in the background.
+worker, whether to run in the background, and how many parallel instances
+of the worker to run.
 
 Workers can act as servers, clients, or both (the default).  For a
 network flow to happen between two workers, at least one of them

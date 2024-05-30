@@ -263,10 +263,21 @@ if __name__ == "__main__":
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--duration', type=int, help='Stop the worker after this many seconds.')
     parser.add_argument('--daemonize',action='store_true')
+    parser.add_argument('--multiply',metavar='N',type=int,default=1,help='run multiple instances of the worker')
+    parser.add_argument('--multiply-delay',type=float,default=0,help='number of seconds to delay between starting additional instances')
 
     args = parser.parse_args()
 
     if args.daemonize:
         daemonize()
+
+    if args.multiply>1:
+        for i in range(1,args.multiply):
+            if not os.fork():
+                # in child
+                break
+            # in parent
+            if args.multiply_delay:
+                time.sleep(args.multiply_delay)
 
     runNetBlastWorker(args.manager,args.worker_host,args.worker_port,args.debug,args.duration)
