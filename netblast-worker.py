@@ -72,7 +72,11 @@ def receiveLoop(sock,duration,stats):
         b = sock.recv_into(buf)
         if b==0: break
         stats['bytes_received'] += b
-    sock.shutdown(socket.SHUT_RD)
+    try:
+        sock.shutdown(socket.SHUT_RD)
+    except OSError as e:
+        if e.errno != errno.ENOTCONN:
+            raise
 
 def sendLoop(sock,duration,stats):
     started = time.time()
@@ -83,7 +87,11 @@ def sendLoop(sock,duration,stats):
     while duration == 0 or time.time() - started < duration:
         sock.sendall(buf)
         stats['bytes_sent'] += len(buf)
-    sock.shutdown(socket.SHUT_WR)
+    try:
+        sock.shutdown(socket.SHUT_WR)
+    except OSError as e:
+        if e.errno != errno.ENOTCONN:
+            raise
 
 def blastServerProtocol(sock,sock_addr):
     buf = bytearray(20)
@@ -185,8 +193,8 @@ def blastClientProtocol(manager,worker_id,blast_ip,blast_port,blast_id,duration,
     if receive_thread:
         receive_thread.join()
 
-    sock.shutdown(socket.SHUT_RDWR)
     sock.close()
+
     elapsed = time.time() - started
 
     req = stats
