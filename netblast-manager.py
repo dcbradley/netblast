@@ -294,8 +294,8 @@ if __name__ == "__main__":
     parser.add_argument('--host', default="", help='IP/hostname to bind to (default all interfaces)')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--duration', default=TEST_DURATION, type=int, help='Stop the test after this many seconds.')
-    parser.add_argument('--clients',action='append',help='Network(s) that should act as servers. (May use option multiple times.)')
-    parser.add_argument('--servers',action='append',help='Network(s) that should act as clients. (May use option multiple times.)')
+    parser.add_argument('--clients',action='append',help='Network(s) that should act as clients. (May use option multiple times.)')
+    parser.add_argument('--servers',action='append',help='Network(s) that should act as servers. (May use option multiple times.)')
     parser.add_argument('--direction',default='s',choices=['s','r','b'],help="Direction of flow from client to server: (s)end, (r)eceive, (b)oth.")
     parser.add_argument('--ramp-delay',type=float,help='Number of seconds to wait before adding another transfer.')
 
